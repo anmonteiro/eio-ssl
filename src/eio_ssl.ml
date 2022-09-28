@@ -68,15 +68,31 @@ let repeat_call ~f fd =
   in
   inner 64 fd f
 
-(**)
-
-module Raw = struct
+module Context = struct
   type t =
     { flow : Eio.Flow.two_way
     ; ctx : Ssl.context
     ; ssl_socket : Ssl.socket
     ; mutable state : [ `Uninitialized | `Connected | `Shutdown ]
     }
+
+  let create ~ctx flow =
+    let flow = (flow :> Eio.Flow.two_way) in
+    let ssl_socket = Ssl.embed_socket (Unix_fd.get_exn flow) ctx in
+    { flow; ctx; ssl_socket; state = `Uninitialized }
+
+  let get_fd t = t.flow
+
+  let get_unix_fd t =
+    match t.state with
+    | `Uninitialized | `Shutdown -> Unix_fd.get_exn t.flow
+    | `Connected -> Ssl.file_descr_of_socket t.ssl_socket
+
+  let ssl_socket t = t.ssl_socket
+end
+
+module Raw = struct
+  open Context
 
   let read { flow; state; ssl_socket; _ } buf =
     match state with
@@ -151,25 +167,7 @@ module Raw = struct
       | `Connected -> if Ssl.close_notify t.ssl_socket then t.state <- `Shutdown)
 end
 
-module Context = struct
-  include Raw
-
-  let create ~ctx flow =
-    let flow = (flow :> Eio.Flow.two_way) in
-    let ssl_socket = Ssl.embed_socket (Unix_fd.get_exn flow) ctx in
-    { flow; ctx; ssl_socket; state = `Uninitialized }
-
-  let get_fd t = t.flow
-
-  let get_unix_fd t =
-    match t.state with
-    | `Uninitialized | `Shutdown -> Unix_fd.get_exn t.flow
-    | `Connected -> Ssl.file_descr_of_socket t.ssl_socket
-
-  let ssl_socket t = t.ssl_socket
-end
-
-type t = < Eio.Flow.two_way ; t : Raw.t >
+type t = < Eio.Flow.two_way ; t : Context.t >
 
 let of_t t =
   object
@@ -180,12 +178,12 @@ let of_t t =
     method t = t
   end
 
-let accept (t : Raw.t) =
+let accept (t : Context.t) =
   assert (t.state = `Uninitialized);
   repeat_call t.flow ~f:(fun () -> Ssl.accept t.ssl_socket);
   of_t { t with state = `Connected }
 
-let connect (t : Raw.t) =
+let connect (t : Context.t) =
   assert (t.state = `Uninitialized);
   repeat_call t.flow ~f:(fun () -> Ssl.connect t.ssl_socket);
   of_t { t with state = `Connected }
