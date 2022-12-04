@@ -105,8 +105,15 @@ module Raw = struct
     in
     inner 64 t.flow f
 
-  let accept t = repeat_call t ~f:(fun () -> Ssl.accept t.ssl_socket)
-  let connect t = repeat_call t ~f:(fun () -> Ssl.connect t.ssl_socket)
+  let accept t =
+    let fd = Unix_fd.get_exn t.flow in
+    Unix.set_nonblock fd;
+    repeat_call t ~f:(fun () -> Ssl.accept t.ssl_socket)
+
+  let connect t =
+    let fd = Unix_fd.get_exn t.flow in
+    Unix.set_nonblock fd;
+    repeat_call t ~f:(fun () -> Ssl.connect t.ssl_socket)
 
   let read t buf =
     let { flow; state; ssl_socket; _ } = t in
