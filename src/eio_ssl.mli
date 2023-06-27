@@ -22,24 +22,23 @@
 
 module Exn : sig
   exception Too_many_polls
-
-  exception
-    Ssl_exception of
-      { ssl_error : Ssl.ssl_error
-      ; message : string
-      }
+  exception Ssl_exception of Ssl.Error.t
 end
 
 module Context : sig
   type t
 
-  val create : ctx:Ssl.context -> #Eio.Flow.two_way -> t
-  val get_fd : t -> Eio.Flow.two_way
+  val create :
+     ctx:Ssl.context
+    -> < Eio.Flow.two_way ; Eio.Flow.close ; .. >
+    -> t
+
+  val get_fd : t -> < Eio.Flow.two_way ; Eio.Flow.close >
   val get_unix_fd : t -> Unix.file_descr
   val ssl_socket : t -> Ssl.socket
 end
 
-type t = private #Eio.Flow.two_way
+type t = private < Eio.Flow.two_way ; Eio.Flow.close ; .. >
 
 val ssl_socket : t -> Ssl.socket
 

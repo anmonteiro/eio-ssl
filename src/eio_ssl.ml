@@ -24,12 +24,7 @@ module Exn = struct
   exception Retry_read
   exception Retry_write
   exception Too_many_polls
-
-  exception
-    Ssl_exception of
-      { ssl_error : Ssl.ssl_error
-      ; message : string
-      }
+  exception Ssl_exception of Ssl.Error.t
 end
 
 module Unix_fd = struct
@@ -45,14 +40,14 @@ module Context = struct
     | Shutdown of exn option
 
   type t =
-    { flow : Eio.Flow.two_way
+    { flow : < Eio.Flow.two_way ; Eio.Flow.close >
     ; ctx : Ssl.context
     ; ssl_socket : Ssl.socket
     ; mutable state : state
     }
 
   let create ~ctx flow =
-    let flow = (flow :> Eio.Flow.two_way) in
+    let flow = (flow :> < Eio.Flow.two_way ; Eio.Flow.close >) in
     let ssl_socket = Ssl.embed_socket (Unix_fd.get_exn flow) ctx in
     { flow; ctx; ssl_socket; state = Uninitialized }
 
@@ -83,10 +78,8 @@ module Raw = struct
          * If this error occurs then no further I/O operations should be
          * performed on the connection and SSL_shutdown() must not be called.
          *)
-        let exn =
-          Exn.Ssl_exception
-            { ssl_error = err; message = Ssl.get_error_string () }
-        in
+        let exn = Exn.Ssl_exception (Ssl.Error.get_error ()) in
+
         t.state <- Shutdown (Some exn);
         raise exn
       | _ -> raise e)
@@ -200,7 +193,7 @@ module Raw = struct
         if Ssl.close_notify t.ssl_socket then t.state <- Shutdown None)
 end
 
-type t = < Eio.Flow.two_way ; t : Context.t >
+type t = < Eio.Flow.two_way ; Eio.Flow.close ; t : Context.t >
 
 let of_t t =
   object
@@ -209,6 +202,7 @@ let of_t t =
     method copy = Raw.copy t
     method shutdown = Raw.shutdown t
     method t = t
+    method close = Eio.Net.close t.flow
   end
 
 let accept (t : Context.t) =
