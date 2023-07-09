@@ -30,7 +30,7 @@ end
 module Unix_fd = struct
   let get_exn fd =
     let fd = Option.get (Eio_unix.Resource.fd_opt fd) in
-    Eio_unix.Fd.use_exn "Unix_fd.get_exn" fd (fun fd -> fd)
+    Eio_unix.Fd.use_exn "Unix_fd.get_exn" fd Fun.id
 end
 
 module Context = struct
@@ -40,14 +40,14 @@ module Context = struct
     | Shutdown of exn option
 
   type t =
-    { flow : < Eio.Flow.two_way ; Eio.Flow.close >
+    { flow : Eio.Flow.two_way
     ; ctx : Ssl.context
     ; ssl_socket : Ssl.socket
     ; mutable state : state
     }
 
   let create ~ctx flow =
-    let flow = (flow :> < Eio.Flow.two_way ; Eio.Flow.close >) in
+    let flow = (flow :> Eio.Flow.two_way) in
     let ssl_socket = Ssl.embed_socket (Unix_fd.get_exn flow) ctx in
     { flow; ctx; ssl_socket; state = Uninitialized }
 
@@ -78,8 +78,10 @@ module Raw = struct
          * If this error occurs then no further I/O operations should be
          * performed on the connection and SSL_shutdown() must not be called.
          *)
-        let exn = Exn.Ssl_exception (Ssl.Error.get_error ()) in
-
+        let exn =
+          let error = Ssl.Error.get_error () in
+          Exn.Ssl_exception error
+        in
         t.state <- Shutdown (Some exn);
         raise exn
       | _ -> raise e)
@@ -193,7 +195,7 @@ module Raw = struct
         if Ssl.close_notify t.ssl_socket then t.state <- Shutdown None)
 end
 
-type t = < Eio.Flow.two_way ; Eio.Flow.close ; t : Context.t >
+type t = < Eio.Flow.two_way ; t : Context.t >
 
 let of_t t =
   object
@@ -202,7 +204,6 @@ let of_t t =
     method copy = Raw.copy t
     method shutdown = Raw.shutdown t
     method t = t
-    method close = Eio.Net.close t.flow
   end
 
 let accept (t : Context.t) =
