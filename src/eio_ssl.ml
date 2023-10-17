@@ -101,8 +101,8 @@ module Raw = struct
            * If this error occurs then no further I/O operations should be
            * performed on the connection and SSL_shutdown() must not be called.
            *)
-          let error = Ssl.Error.get_error () in
           let exn =
+            let error = Ssl.Error.get_error () in
             match reason_code_is_eof error with
             | true -> End_of_file
             | false -> Exn.Ssl_exception error
