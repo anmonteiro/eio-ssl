@@ -244,6 +244,10 @@ module Pi = struct
   (* Eio.Flow.Pi.SHUTDOWN *)
   let shutdown = Raw.shutdown
   let close t = shutdown t `All
+
+  (* Eio.Net.Pi.SOCKET *)
+  let getsockopt (t : t) opt = Eio.Net.getsockopt t.socket opt
+  let setsockopt (t : t) opt v = Eio.Net.setsockopt t.socket opt v
 end
 
 let of_t t =
